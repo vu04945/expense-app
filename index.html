@@ -149,6 +149,16 @@ section.on{display:block}
     <button class="btn2" id="syncNow" style="margin-top:10px;width:100%">立即同步</button>
   </div>
   <div class="card">
+    <strong>帳戶管理</strong>
+    <p class="muted">可改名稱、新增或刪除(沒有紀錄的才能刪)。改名只影響之後同步到試算表的名稱。</p>
+    <div id="acctMgr"></div>
+    <label>新增帳戶</label>
+    <input id="newName" type="text" placeholder="例如:悠遊卡、玉山銀行">
+    <label>類型</label>
+    <select id="newKind"></select>
+    <button class="btn2" id="addAcct" style="width:100%;margin-top:10px">新增</button>
+  </div>
+  <div class="card">
     <strong>帳戶期初餘額</strong>
     <p class="muted">只填一次。信用卡填目前欠款(正數)。</p>
     <div id="openList"></div>

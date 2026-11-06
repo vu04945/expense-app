@@ -1,37 +1,57 @@
 "use strict";
 
-const ACCOUNTS = [
-  { id: "cash",   name: "現金",       group: "life" },
-  { id: "jkopay", name: "街口",       group: "life" },
-  { id: "linepay",name: "LINE Pay",   group: "life" },
-  { id: "bank",   name: "銀行活存",   group: "life" },
-  { id: "card",   name: "信用卡",     group: "life", liability: true },
-  { id: "broker", name: "證券交割戶", group: "invest" },
+const KINDS = [
+  { kind: "cash",   label: "現金" },
+  { kind: "wallet", label: "儲值金" },
+  { kind: "bank",   label: "銀行" },
+  { kind: "card",   label: "信用卡" },
+  { kind: "broker", label: "證券戶" },
 ];
+const DEFAULT_ACCOUNTS = [
+  { id: "cash",    name: "現金",       kind: "cash" },
+  { id: "jkopay",  name: "街口",       kind: "wallet" },
+  { id: "linepay", name: "LINE Pay",   kind: "wallet" },
+  { id: "bank",    name: "台新銀行",   kind: "bank" },
+  { id: "sinopac", name: "永豐銀行",   kind: "bank" },
+  { id: "ctbc",    name: "中國信託",   kind: "bank" },
+  { id: "cathay",  name: "國泰世華",   kind: "bank" },
+  { id: "card",    name: "信用卡",     kind: "card" },
+  { id: "broker",  name: "證券交割戶", kind: "broker" },
+];
+let ACCOUNTS = [];
+function decorate(a) {
+  return { id: a.id, name: a.name, kind: a.kind,
+    group: a.kind === "broker" ? "invest" : "life", liability: a.kind === "card" };
+}
+function applyAccounts() {
+  ACCOUNTS = state.accounts.map(decorate);
+}
 const EXPENSE_CATS = ["餐飲", "交通", "日用", "娛樂", "服飾", "醫療", "居住", "通訊", "旅遊", "其他"];
 const INCOME_CATS = ["薪資", "股利", "其他收入"];
 const INVEST_COST = "投資成本";
 const RECON_EXP = "未記錄支出";
 const RECON_INC = "對帳差額";
 const PRESETS = [
-  { label: "提款",       from: "bank",   to: "cash" },
-  { label: "儲值街口",   from: "bank",   to: "jkopay" },
-  { label: "儲值LINE Pay", from: "bank", to: "linepay" },
-  { label: "繳卡費",     from: "bank",   to: "card" },
-  { label: "買股票",     from: "bank",   to: "broker" },
-  { label: "賣股票",     from: "broker", to: "bank" },
+  { label: "提款",         from: { kind: "bank" },   to: { kind: "cash" } },
+  { label: "儲值街口",     from: { kind: "bank" },   to: { id: "jkopay" } },
+  { label: "儲值LINE Pay", from: { kind: "bank" },   to: { id: "linepay" } },
+  { label: "繳卡費",       from: { kind: "bank" },   to: { kind: "card" } },
+  { label: "買股票",       from: { kind: "bank" },   to: { kind: "broker" } },
+  { label: "賣股票",       from: { kind: "broker" }, to: { kind: "bank" } },
+  { label: "銀行互轉",     from: { kind: "bank" },   to: { kind: "bank", other: true } },
 ];
 const KEY = "exp.v1";
 const TOKEN_KEY = "exp.token";
 
 let memStore = null;
-let state = { entries: [], url: "", openings: {} };
+let state = { entries: [], url: "", openings: {}, accounts: null };
 let tType = "expense";
 let tCat = EXPENSE_CATS[0];
 let viewMonth = monthOf(todayStr());
 let storageOk = true;
 
 function $(id) { return document.getElementById(id); }
+function kindOf(id) { return (ACCOUNTS.find(a => a.id === id) || {}).kind; }
 function acctName(id) { return (ACCOUNTS.find(a => a.id === id) || { name: id }).name; }
 function pad(n) { return String(n).padStart(2, "0"); }
 function todayStr() {
@@ -55,6 +75,10 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) state = Object.assign(state, JSON.parse(raw));
   } catch (e) { storageOk = false; if (memStore) state = memStore; }
+  if (!Array.isArray(state.accounts) || !state.accounts.length) {
+    state.accounts = DEFAULT_ACCOUNTS.map(a => Object.assign({}, a));
+  }
+  applyAccounts();
 }
 function save() {
   memStore = state;
@@ -96,8 +120,8 @@ function monthStats(ym) {
     } else if (e.type === "income") {
       if (e.category === "股利") s.div += e.amount; else s.inc += e.amount;
     } else if (e.type === "transfer") {
-      if (e.toAccount === "broker") s.invNet += e.amount;
-      if (e.account === "broker") s.invNet -= e.amount;
+      if (kindOf(e.toAccount) === "broker") s.invNet += e.amount;
+      if (kindOf(e.account) === "broker") s.invNet -= e.amount;
     }
   });
   return s;
@@ -111,10 +135,20 @@ function renderCats() {
     `<button class="chip${c === tCat ? " on" : ""}" data-c="${esc(c)}">${esc(c)}</button>`).join("");
 }
 function fillAcctSelects() {
+  const prevFrom = $("acct").value, prevTo = $("toAcct").value;
   const opts = ACCOUNTS.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
   $("acct").innerHTML = opts;
   $("toAcct").innerHTML = opts;
-  $("toAcct").value = "cash";
+  const has = id => ACCOUNTS.some(a => a.id === id);
+  $("acct").value = has(prevFrom) ? prevFrom : ACCOUNTS[0].id;
+  $("toAcct").value = has(prevTo) ? prevTo : (has("cash") ? "cash" : ACCOUNTS[0].id);
+}
+function resolveAcct(spec, avoid, prefer) {
+  if (spec.id) return ACCOUNTS.find(a => a.id === spec.id);
+  const ofKind = ACCOUNTS.filter(a => a.kind === spec.kind);
+  if (prefer) { const p = ofKind.find(a => a.id === prefer); if (p) return p; }
+  if (spec.other) return ofKind.find(a => a.id !== avoid);
+  return ofKind[0];
 }
 function renderPresets() {
   $("presets").innerHTML = PRESETS.map((p, i) =>
@@ -158,7 +192,7 @@ function renderMonth() {
 function acctRow(a, bal) {
   const shown = a.liability ? -bal : bal;
   const label = a.liability ? "目前欠款" : "";
-  const recon = a.group === "life" && !a.liability && a.id !== "bank"
+  const recon = a.kind === "cash" || a.kind === "wallet"
     ? `<button class="btn2" data-recon="${a.id}">對帳</button>` : "";
   return `<div class="row"><span>${esc(a.name)} <small>${label}</small></span>
     <span class="num ${shown < 0 && !a.liability ? "neg" : ""}">${money(shown)} ${recon}</span></div>`;
@@ -177,6 +211,23 @@ function renderSettings() {
     `<label>${esc(a.name)}${a.liability ? "(欠款)" : ""}</label>
      <input type="number" inputmode="decimal" step="any" data-open="${a.id}" value="${Number(state.openings[a.id] || 0)}">`).join("");
   $("storageNote").textContent = storageOk ? "" : "注意:這個瀏覽器無法儲存資料,關閉頁面後紀錄會消失。請盡快同步。";
+  renderAcctMgr();
+}
+function acctInUse(id) {
+  return state.entries.some(e => e.account === id || e.toAccount === id);
+}
+function renderAcctMgr() {
+  $("acctMgr").innerHTML = state.accounts.map(a => {
+    const kindLabel = (KINDS.find(k => k.kind === a.kind) || {}).label;
+    const del = acctInUse(a.id) ? `<small class="muted">有紀錄</small>`
+      : `<button class="del" data-rmacct="${a.id}">刪除</button>`;
+    return `<div class="row"><div style="flex:1"><input type="text" data-rename="${a.id}" value="${esc(a.name)}" aria-label="帳戶名稱"></div>
+      <div style="white-space:nowrap"><small class="muted">${esc(kindLabel)}</small> ${del}</div></div>`;
+  }).join("");
+  $("newKind").innerHTML = KINDS.map(k => `<option value="${k.kind}">${esc(k.label)}</option>`).join("");
+}
+function refreshAfterAcctChange() {
+  applyAccounts(); save(); fillAcctSelects(); renderAll(); renderSettings();
 }
 function unsynced() {
   return state.entries.filter(e => !e.synced || (e.void && !e.voidSynced));
@@ -304,7 +355,10 @@ function bind() {
   $("presets").addEventListener("click", ev => {
     const p = ev.target.closest("button"); if (!p) return;
     const pr = PRESETS[Number(p.dataset.p)];
-    $("acct").value = pr.from; $("toAcct").value = pr.to;
+    const from = resolveAcct(pr.from, null, $("acct").value);
+    const to = from && resolveAcct(pr.to, from.id, null);
+    if (!from || !to) { toast("找不到對應帳戶,請到「設定」新增"); return; }
+    $("acct").value = from.id; $("toAcct").value = to.id;
     $("note").value = pr.label;
   });
   $("save").addEventListener("click", onSave);
@@ -337,6 +391,34 @@ function bind() {
   $("saveOpen").addEventListener("click", () => {
     document.querySelectorAll("[data-open]").forEach(i => { state.openings[i.dataset.open] = Number(i.value) || 0; });
     save(); renderAll(); toast("期初餘額已儲存");
+  });
+  $("addAcct").addEventListener("click", () => {
+    const name = $("newName").value.trim();
+    if (!name) { toast("請輸入帳戶名稱"); return; }
+    if (state.accounts.some(a => a.name === name)) { toast("已有同名帳戶"); return; }
+    state.accounts.push({ id: "a" + newId(), name, kind: $("newKind").value });
+    $("newName").value = "";
+    refreshAfterAcctChange(); toast("已新增帳戶");
+  });
+  $("acctMgr").addEventListener("change", ev => {
+    const i = ev.target.closest("[data-rename]"); if (!i) return;
+    const name = i.value.trim();
+    const acct = state.accounts.find(a => a.id === i.dataset.rename);
+    if (!acct) return;
+    if (!name || state.accounts.some(a => a.id !== acct.id && a.name === name)) {
+      i.value = acct.name; toast("名稱不可空白或重複"); return;
+    }
+    acct.name = name; refreshAfterAcctChange();
+  });
+  $("acctMgr").addEventListener("click", ev => {
+    const d = ev.target.closest("[data-rmacct]"); if (!d) return;
+    const id = d.dataset.rmacct;
+    if (acctInUse(id)) { toast("這個帳戶已有紀錄,不能刪除"); return; }
+    if (state.accounts.length <= 1) { toast("至少要保留一個帳戶"); return; }
+    if (!confirm("確定刪除這個帳戶?")) return;
+    state.accounts = state.accounts.filter(a => a.id !== id);
+    delete state.openings[id];
+    refreshAfterAcctChange();
   });
   window.addEventListener("online", syncNow);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) syncNow(); });
