@@ -18,6 +18,13 @@ const DEFAULT_ACCOUNTS = [
   { id: "card",    name: "信用卡",     kind: "card" },
   { id: "broker",  name: "投資部位(股票)", kind: "broker" },
 ];
+const CARDS = [
+  { id: "card",       name: "台新Richart卡" },
+  { id: "card_cube",  name: "國泰CUBE卡" },
+  { id: "card_dbs",   name: "星展eco永續卡" },
+  { id: "card_dawho", name: "永豐大戶卡" },
+  { id: "card_ubot",  name: "聯邦吉鶴卡" },
+];
 const RENAMES = { "永豐銀行": "永豐(薪轉・交割)", "證券交割戶": "投資部位(股票)" };
 let ACCOUNTS = [];
 function decorate(a) {
@@ -83,6 +90,14 @@ function load() {
   if (!state.renamedV1) {
     state.accounts.forEach(a => { if (RENAMES[a.name]) a.name = RENAMES[a.name]; });
     state.renamedV1 = true;
+  }
+  if (!state.cardsV1) {
+    const first = state.accounts.find(a => a.id === "card");
+    if (first && first.name === "信用卡" && !acctInUse("card")) first.name = CARDS[0].name;
+    CARDS.forEach(c => {
+      if (!state.accounts.some(a => a.id === c.id || a.name === c.name)) state.accounts.push({ id: c.id, name: c.name, kind: "card" });
+    });
+    state.cardsV1 = true;
   }
   applyAccounts();
 }
