@@ -12,12 +12,13 @@ const DEFAULT_ACCOUNTS = [
   { id: "jkopay",  name: "街口",       kind: "wallet" },
   { id: "linepay", name: "LINE Pay",   kind: "wallet" },
   { id: "bank",    name: "台新銀行",   kind: "bank" },
-  { id: "sinopac", name: "永豐銀行",   kind: "bank" },
+  { id: "sinopac", name: "永豐(薪轉・交割)", kind: "bank" },
   { id: "ctbc",    name: "中國信託",   kind: "bank" },
   { id: "cathay",  name: "國泰世華",   kind: "bank" },
   { id: "card",    name: "信用卡",     kind: "card" },
-  { id: "broker",  name: "證券交割戶", kind: "broker" },
+  { id: "broker",  name: "投資部位(股票)", kind: "broker" },
 ];
+const RENAMES = { "永豐銀行": "永豐(薪轉・交割)", "證券交割戶": "投資部位(股票)" };
 let ACCOUNTS = [];
 function decorate(a) {
   return { id: a.id, name: a.name, kind: a.kind,
@@ -36,8 +37,8 @@ const PRESETS = [
   { label: "儲值街口",     from: { kind: "bank" },   to: { id: "jkopay" } },
   { label: "儲值LINE Pay", from: { kind: "bank" },   to: { id: "linepay" } },
   { label: "繳卡費",       from: { kind: "bank" },   to: { kind: "card" } },
-  { label: "買股票",       from: { kind: "bank" },   to: { kind: "broker" } },
-  { label: "賣股票",       from: { kind: "broker" }, to: { kind: "bank" } },
+  { label: "買股票",       from: { id: "sinopac", kind: "bank" },   to: { kind: "broker" }, fixedFrom: true },
+  { label: "賣股票",       from: { kind: "broker" }, to: { id: "sinopac", kind: "bank" } },
   { label: "銀行互轉",     from: { kind: "bank" },   to: { kind: "bank", other: true } },
 ];
 const KEY = "exp.v1";
@@ -46,6 +47,7 @@ const TOKEN_KEY = "exp.token";
 let memStore = null;
 let state = { entries: [], url: "", openings: {}, accounts: null };
 let tType = "expense";
+let lastType = "expense";
 let tCat = EXPENSE_CATS[0];
 let viewMonth = monthOf(todayStr());
 let storageOk = true;
@@ -77,6 +79,10 @@ function load() {
   } catch (e) { storageOk = false; if (memStore) state = memStore; }
   if (!Array.isArray(state.accounts) || !state.accounts.length) {
     state.accounts = DEFAULT_ACCOUNTS.map(a => Object.assign({}, a));
+  }
+  if (!state.renamedV1) {
+    state.accounts.forEach(a => { if (RENAMES[a.name]) a.name = RENAMES[a.name]; });
+    state.renamedV1 = true;
   }
   applyAccounts();
 }
@@ -144,7 +150,10 @@ function fillAcctSelects() {
   $("toAcct").value = has(prevTo) ? prevTo : (has("cash") ? "cash" : ACCOUNTS[0].id);
 }
 function resolveAcct(spec, avoid, prefer) {
-  if (spec.id) return ACCOUNTS.find(a => a.id === spec.id);
+  if (spec.id) {
+    const byId = ACCOUNTS.find(a => a.id === spec.id);
+    if (byId || !spec.kind) return byId;
+  }
   const ofKind = ACCOUNTS.filter(a => a.kind === spec.kind);
   if (prefer) { const p = ofKind.find(a => a.id === prefer); if (p) return p; }
   if (spec.other) return ofKind.find(a => a.id !== avoid);
@@ -161,6 +170,9 @@ function applyType() {
   $("toBox").style.display = tr ? "" : "none";
   $("presetBox").style.display = tr ? "" : "none";
   $("acctLabel").textContent = tr ? "轉出帳戶" : (tType === "income" ? "入帳帳戶" : "付款帳戶");
+  if (tType === "income" && lastType !== "income" && ACCOUNTS.some(a => a.id === "sinopac")) $("acct").value = "sinopac";
+  if (tType === "expense" && lastType === "income" && ACCOUNTS.some(a => a.id === "cash")) $("acct").value = "cash";
+  lastType = tType;
   if (!tr) renderCats();
 }
 function typeLabel(e) {
@@ -355,7 +367,7 @@ function bind() {
   $("presets").addEventListener("click", ev => {
     const p = ev.target.closest("button"); if (!p) return;
     const pr = PRESETS[Number(p.dataset.p)];
-    const from = resolveAcct(pr.from, null, $("acct").value);
+    const from = resolveAcct(pr.from, null, pr.fixedFrom ? null : $("acct").value);
     const to = from && resolveAcct(pr.to, from.id, null);
     if (!from || !to) { toast("找不到對應帳戶,請到「設定」新增"); return; }
     $("acct").value = from.id; $("toAcct").value = to.id;
