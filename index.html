@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="記帳">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f5f1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>記帳</title>
+<style>
+:root{
+  --bg:#f6f5f1; --card:#ffffff; --ink:#1f2328; --sub:#6b7280; --line:#e5e3dc;
+  --accent:#2f6f5e; --accent-ink:#ffffff; --warn:#b45309; --bad:#b42318;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#16181a; --card:#1f2225; --ink:#eceae4; --sub:#9aa0a6; --line:#2e3236;
+    --accent:#5fb39b; --accent-ink:#0f1a16; --warn:#f0a35a; --bad:#f08a80; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",sans-serif}
+body{padding:0 16px calc(84px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top)) 0 10px}
+h1{font-size:20px;margin:0}
+#sync{font-size:13px;color:var(--sub);border:1px solid var(--line);background:var(--card);
+  border-radius:999px;padding:6px 12px}
+#sync.pending{color:var(--warn);border-color:var(--warn)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;margin-bottom:12px}
+.seg button,.chip,.preset{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);
+  border-radius:10px;padding:10px 6px;cursor:pointer}
+.seg button.on,.chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+label{display:block;font-size:13px;color:var(--sub);margin:12px 0 4px}
+input,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);
+  border-radius:10px;padding:12px}
+#amount{font-size:34px;font-weight:600;text-align:right;padding:10px 12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:8px 14px}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.preset{padding:8px 12px;font-size:14px}
+.save{width:100%;margin-top:16px;font:inherit;font-size:18px;font-weight:600;background:var(--accent);
+  color:var(--accent-ink);border:0;border-radius:12px;padding:14px;cursor:pointer}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row small{color:var(--sub)}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.neg{color:var(--bad)}
+.muted{color:var(--sub);font-size:13px}
+.del{font:inherit;font-size:13px;color:var(--bad);background:none;border:0;padding:4px 0 4px 8px;cursor:pointer}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);
+  padding:6px 8px calc(6px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+nav button{flex:1;font:inherit;font-size:13px;background:none;border:0;color:var(--sub);padding:8px 0;cursor:pointer}
+nav button.on{color:var(--accent);font-weight:600}
+section{display:none}
+section.on{display:block}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom));
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;
+  transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+.btn2{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--card);color:var(--ink);
+  border-radius:10px;padding:8px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1>記帳</h1>
+  <div id="sync">已同步</div>
+</header>
+
+<section id="tab-add" class="on">
+  <div class="seg" id="typeSeg">
+    <button data-t="expense" class="on">支出</button>
+    <button data-t="income">收入</button>
+    <button data-t="transfer">轉帳</button>
+  </div>
+  <div class="card">
+    <input id="amount" type="number" inputmode="decimal" placeholder="0" min="0" step="any" aria-label="金額">
+    <div id="presetBox" style="display:none">
+      <label>常用轉帳</label>
+      <div class="presets" id="presets"></div>
+    </div>
+    <div id="catBox">
+      <label>類別</label>
+      <div class="chips" id="cats"></div>
+    </div>
+    <label id="acctLabel">付款帳戶</label>
+    <select id="acct"></select>
+    <div id="toBox" style="display:none">
+      <label>轉入帳戶</label>
+      <select id="toAcct"></select>
+    </div>
+    <label>日期(轉帳、買賣股票請填結算日)</label>
+    <input id="date" type="date">
+    <label>備註(選填)</label>
+    <input id="note" type="text" placeholder="例如:午餐、零股買進">
+    <button class="save" id="save">記下來</button>
+  </div>
+  <div class="card">
+    <strong>最近 5 筆</strong>
+    <div id="recent"></div>
+  </div>
+</section>
+
+<section id="tab-month">
+  <div class="card">
+    <div class="row"><strong id="monthTitle"></strong>
+      <span><button class="btn2" id="prevM">‹</button> <button class="btn2" id="nextM">›</button></span></div>
+    <div class="row"><span>生活支出</span><span class="num" id="mExp"></span></div>
+    <div class="row"><span>收入(不含股利)</span><span class="num" id="mInc"></span></div>
+    <div class="row"><span>股利</span><span class="num" id="mDiv"></span></div>
+    <div class="row"><span>投資成本(手續費、證交稅)</span><span class="num" id="mInvCost"></span></div>
+    <div class="row"><span>轉入證券戶(淨)</span><span class="num" id="mInvNet"></span></div>
+  </div>
+  <div class="card">
+    <strong>生活支出分類</strong>
+    <div id="mCats"></div>
+  </div>
+  <p class="muted">轉帳(提款、儲值、繳卡費、買賣股票)不算消費。投資成本與股利不計入生活支出。</p>
+</section>
+
+<section id="tab-acct">
+  <div class="card">
+    <strong>生活現金</strong>
+    <div id="lifeList"></div>
+    <div class="row"><strong>合計</strong><strong class="num" id="lifeTotal"></strong></div>
+  </div>
+  <div class="card">
+    <strong>投資部位</strong>
+    <div id="invList"></div>
+    <p class="muted">這裡只記資金進出證券戶,不含股票市值。持股與損益以 holdings.json 為準。</p>
+  </div>
+  <p class="muted">對帳:實際點一次現金或看 App 餘額,輸入後,差額會記成「未記錄支出」或「對帳差額」。</p>
+</section>
+
+<section id="tab-set">
+  <div class="card">
+    <label>同步網址(Apps Script 網頁應用程式 URL)</label>
+    <input id="setUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+    <label>密鑰(只存在這支手機)</label>
+    <input id="setToken" type="password" autocomplete="off">
+    <button class="save" id="saveSet">儲存設定</button>
+    <button class="btn2" id="syncNow" style="margin-top:10px;width:100%">立即同步</button>
+  </div>
+  <div class="card">
+    <strong>帳戶期初餘額</strong>
+    <p class="muted">只填一次。信用卡填目前欠款(正數)。</p>
+    <div id="openList"></div>
+    <button class="btn2" id="saveOpen" style="width:100%;margin-top:10px">儲存期初餘額</button>
+  </div>
+  <p class="muted" id="storageNote"></p>
+</section>
+
+<nav id="nav">
+  <button data-tab="add" class="on">記一筆</button>
+  <button data-tab="month">本月</button>
+  <button data-tab="acct">帳戶</button>
+  <button data-tab="set">設定</button>
+</nav>
+<div id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
