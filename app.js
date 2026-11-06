@@ -185,7 +185,7 @@ function renderSync(msg) {
   const n = unsynced().length;
   const el = $("sync");
   el.classList.toggle("pending", n > 0);
-  el.textContent = msg || (n > 0 ? "未同步 " + n + " 筆" : "已同步");
+  el.textContent = msg || (n > 0 ? "未同步 " + n + " 筆" + (lastError ? "・點我查看" : "") : "已同步");
 }
 function renderAll() {
   renderRecent(); renderMonth(); renderAccts(); renderSync();
@@ -243,12 +243,22 @@ function deleteEntry(id) {
 
 /* ---------- 同步 ---------- */
 let syncing = false;
-async function syncNow() {
+let lastError = "";
+async function syncNow(manual) {
   const pending = unsynced();
-  if (!pending.length || syncing) return;
+  if (!pending.length) { if (manual === true) toast("沒有待同步的紀錄"); return; }
+  if (syncing) return;
   const url = state.url, token = getToken();
-  if (!url || !token) { renderSync(); return; }
-  if (!navigator.onLine) { renderSync(); return; }
+  if (!url || !token) {
+    lastError = "尚未設定同步網址或密鑰(到「設定」填寫)";
+    if (manual === true) toast(lastError);
+    renderSync(); return;
+  }
+  if (!navigator.onLine) {
+    lastError = "目前沒有網路";
+    if (manual === true) toast(lastError);
+    renderSync(); return;
+  }
   syncing = true;
   renderSync("同步中…");
   try {
@@ -269,11 +279,15 @@ async function syncNow() {
     state.entries = state.entries.filter(e => !(e.void && e.voidSynced && e.synced));
     save();
     syncing = false;
+    lastError = "";
     renderAll();
+    if (manual === true) toast("同步完成");
   } catch (err) {
     syncing = false;
-    renderSync("同步失敗,稍後重試");
-    setTimeout(renderSync, 2500);
+    lastError = err && err.message === "unauthorized" ? "密鑰不對(設定頁的密鑰與 Apps Script 的 TOKEN 不一致)"
+      : "同步失敗:" + (err && err.message ? err.message : "未知錯誤");
+    renderSync();
+    if (manual === true) toast(lastError);
   }
 }
 
@@ -315,7 +329,11 @@ function bind() {
     setToken($("setToken").value.trim());
     save(); toast("設定已儲存"); syncNow();
   });
-  $("syncNow").addEventListener("click", () => { syncNow(); });
+  $("syncNow").addEventListener("click", () => { syncNow(true); });
+  $("sync").addEventListener("click", () => {
+    if (unsynced().length === 0) { toast("已同步"); return; }
+    syncNow(true);
+  });
   $("saveOpen").addEventListener("click", () => {
     document.querySelectorAll("[data-open]").forEach(i => { state.openings[i.dataset.open] = Number(i.value) || 0; });
     save(); renderAll(); toast("期初餘額已儲存");

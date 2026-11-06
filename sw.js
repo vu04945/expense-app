@@ -1,4 +1,4 @@
-const CACHE = "expense-v1";
+const CACHE = "expense-v2";
 const SHELL = ["./", "index.html", "app.js", "manifest.webmanifest", "icon-180.png"];
 
 self.addEventListener("install", e => {
